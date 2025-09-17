@@ -276,13 +276,23 @@ async def get_random_song(folder_paths: Optional[str] = None):
         query["folder_path"] = {"$in": folder_list}
     
     # Get random song using aggregation
-    pipeline = [{"$match": query}, {"$sample": {"size": 1}}]
-    songs = await db.songs.aggregate(pipeline).to_list(1)
-    
-    if not songs:
-        raise HTTPException(status_code=404, detail="No songs found")
-    
-    return Song(**songs[0])
+    try:
+        pipeline = [{"$match": query}, {"$sample": {"size": 1}}]
+        songs = await db.songs.aggregate(pipeline).to_list(1)
+        
+        if not songs:
+            raise HTTPException(status_code=404, detail="No songs found")
+        
+        return Song(**songs[0])
+    except Exception as e:
+        # Fallback: get all songs and pick random one
+        all_songs = await db.songs.find(query).to_list(1000)
+        if not all_songs:
+            raise HTTPException(status_code=404, detail="No songs found")
+        
+        import random
+        random_song = random.choice(all_songs)
+        return Song(**random_song)
 
 # Include the router in the main app
 app.include_router(api_router)
