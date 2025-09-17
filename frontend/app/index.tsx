@@ -99,9 +99,32 @@ export default function MusicPlayer() {
   const [favorites, setFavorites] = useState<string[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState('');
+  
+  // New enhanced features
+  const [currentView, setCurrentView] = useState<'player' | 'playlist' | 'search' | 'lyrics' | 'equalizer'>('player');
+  const [themeMode, setThemeMode] = useState<'light' | 'dark' | 'auto'>('dark');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Song[]>([]);
+  const [playHistory, setPlayHistory] = useState<PlayHistoryItem[]>([]);
+  const [playQueue, setPlayQueue] = useState<Song[]>([]);
+  const [currentQueueIndex, setCurrentQueueIndex] = useState(0);
+  const [sleepTimer, setSleepTimer] = useState(0);
+  const [sleepTimerActive, setSleepTimerActive] = useState(false);
+  const [showLyrics, setShowLyrics] = useState(false);
+  const [showEqualizer, setShowEqualizer] = useState(false);
+  const [equalizerBands, setEqualizerBands] = useState([0, 0, 0, 0, 0, 0, 0, 0]);
+  const [visualizerData, setVisualizerData] = useState<AudioVisualizerData>({ frequency: [], amplitude: 0 });
+  const [showSleepTimer, setShowSleepTimer] = useState(false);
+  
+  // Animation values
+  const albumRotation = useRef(new Animated.Value(0)).current;
+  const playButtonScale = useRef(new Animated.Value(1)).current;
+  const visualizerBars = useRef(Array.from({ length: 20 }, () => new Animated.Value(0.1))).current;
 
   const soundRef = useRef<Audio.Sound | null>(null);
   const positionUpdateRef = useRef<NodeJS.Timeout | null>(null);
+  const sleepTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const visualizerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     initializeApp();
