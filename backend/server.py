@@ -265,7 +265,7 @@ async def add_play_history(song_id: str, play_duration: int = 0):
 @api_router.get("/history")
 async def get_play_history(limit: int = 50):
     history = await db.play_history.find().sort("played_date", -1).limit(limit).to_list(limit)
-    return history
+    return [PlayHistory(**item) for item in history]
 
 # Random song endpoint
 @api_router.get("/songs/random", response_model=Song)
