@@ -846,6 +846,7 @@ export default function MusicPlayer() {
     </View>
   );
 
+  // Permission check inside the component
   if (permissionStatus !== 'granted') {
     return (
       <SafeAreaView style={styles.container}>
