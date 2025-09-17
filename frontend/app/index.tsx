@@ -329,6 +329,9 @@ export default function MusicPlayer() {
       setIsLoading(true);
       setCurrentSong(song);
 
+      // Add haptic feedback
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
       const { sound: newSound } = await Audio.Sound.createAsync(
         { uri: song.file_path },
         { 
@@ -343,8 +346,15 @@ export default function MusicPlayer() {
       setIsPlaying(true);
       setIsLoading(false);
 
-      // Set up position tracking
-      newSound.setOnPlaybackStatusUpdate((status) => {
+      // Start animations and visualizer
+      startAlbumRotation();
+      startVisualizer();
+      animatePlayButton();
+
+      // Add to play history
+      await addToPlayHistory(song);
+
+      newSound.setOnPlaybackStatusUpdate((status: AVPlaybackStatus) => {
         if (status.isLoaded) {
           setPosition(status.positionMillis || 0);
           setDuration(status.durationMillis || 0);
@@ -355,19 +365,26 @@ export default function MusicPlayer() {
         }
       });
 
-      // Save play history
+      // Save play history to backend
       try {
-        await fetch(`${EXPO_PUBLIC_BACKEND_URL}/api/history?song_id=${song.id}&play_duration=0`, {
+        await fetch(`${EXPO_PUBLIC_BACKEND_URL}/api/play-history`, {
           method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            song_id: song.id,
+            played_at: new Date().toISOString(),
+          }),
         });
       } catch (error) {
-        console.log('Error saving play history:', error);
+        console.log('Error saving play history to backend:', error);
       }
 
     } catch (error) {
       console.error('Error playing song:', error);
       setIsLoading(false);
-      Alert.alert('Error', 'Failed to play song');
+      Alert.alert('Error', 'No se pudo reproducir la canción');
     }
   };
 
