@@ -543,7 +543,218 @@ export default function MusicPlayer() {
     }
   };
 
-  const getFilteredSongs = () => {
+  // Enhanced features functions
+  const startAlbumRotation = () => {
+    albumRotation.setValue(0);
+    Animated.loop(
+      Animated.timing(albumRotation, {
+        toValue: 1,
+        duration: 20000,
+        useNativeDriver: true,
+      })
+    ).start();
+  };
+
+  const stopAlbumRotation = () => {
+    albumRotation.stopAnimation();
+  };
+
+  const animatePlayButton = () => {
+    Animated.sequence([
+      Animated.timing(playButtonScale, {
+        toValue: 0.9,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(playButtonScale, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  const startVisualizer = () => {
+    visualizerRef.current = setInterval(() => {
+      visualizerBars.forEach((bar, index) => {
+        const randomHeight = Math.random() * 0.8 + 0.2;
+        Animated.timing(bar, {
+          toValue: randomHeight,
+          duration: 150 + Math.random() * 100,
+          useNativeDriver: false,
+        }).start();
+      });
+      
+      // Update visualizer data
+      setVisualizerData({
+        frequency: Array.from({ length: 20 }, () => Math.random() * 100),
+        amplitude: Math.random() * 100,
+      });
+    }, 200);
+  };
+
+  const stopVisualizer = () => {
+    if (visualizerRef.current) {
+      clearInterval(visualizerRef.current);
+      visualizerRef.current = null;
+    }
+    visualizerBars.forEach(bar => {
+      Animated.timing(bar, {
+        toValue: 0.1,
+        duration: 300,
+        useNativeDriver: false,
+      }).start();
+    });
+  };
+
+  const searchSongs = (query: string) => {
+    setSearchQuery(query);
+    if (query.trim() === '') {
+      setSearchResults([]);
+      return;
+    }
+
+    const filteredSongs = songs.filter(song =>
+      song.title.toLowerCase().includes(query.toLowerCase()) ||
+      song.artist.toLowerCase().includes(query.toLowerCase()) ||
+      song.album.toLowerCase().includes(query.toLowerCase())
+    );
+    setSearchResults(filteredSongs);
+  };
+
+  const addToPlayHistory = async (song: Song) => {
+    const historyItem: PlayHistoryItem = {
+      id: Date.now().toString(),
+      song,
+      played_at: new Date(),
+    };
+
+    const newHistory = [historyItem, ...playHistory.slice(0, 49)]; // Keep last 50
+    setPlayHistory(newHistory);
+    
+    try {
+      await AsyncStorage.setItem('playHistory', JSON.stringify(newHistory));
+    } catch (error) {
+      console.error('Error saving play history:', error);
+    }
+  };
+
+  const startSleepTimer = (minutes: number) => {
+    setSleepTimer(minutes);
+    setSleepTimerActive(true);
+    
+    sleepTimerRef.current = setTimeout(() => {
+      pauseMusic();
+      setSleepTimerActive(false);
+      setSleepTimer(0);
+      Alert.alert('Temporizador', 'La música se pausó automáticamente');
+    }, minutes * 60 * 1000);
+  };
+
+  const cancelSleepTimer = () => {
+    if (sleepTimerRef.current) {
+      clearTimeout(sleepTimerRef.current);
+      sleepTimerRef.current = null;
+    }
+    setSleepTimerActive(false);
+    setSleepTimer(0);
+  };
+
+  const pauseMusic = async () => {
+    try {
+      if (soundRef.current && isPlaying) {
+        await soundRef.current.pauseAsync();
+        setIsPlaying(false);
+        stopAlbumRotation();
+        stopVisualizer();
+      }
+    } catch (error) {
+      console.error('Error pausing music:', error);
+    }
+  };
+
+  const updateEqualizer = (bandIndex: number, value: number) => {
+    const newBands = [...equalizerBands];
+    newBands[bandIndex] = value;
+    setEqualizerBands(newBands);
+    
+    // Note: In a real app, you'd apply these values to an audio processor
+    // For now, we'll just store the values
+    AsyncStorage.setItem('equalizerBands', JSON.stringify(newBands));
+  };
+
+  const applyEqualizerPreset = (preset: string) => {
+    let bands: number[] = [];
+    
+    switch (preset) {
+      case 'rock':
+        bands = [3, 2, -1, -2, 1, 2, 3, 4];
+        break;
+      case 'pop':
+        bands = [1, 2, 3, 2, 0, -1, -1, 1];
+        break;
+      case 'jazz':
+        bands = [2, 1, 0, 1, 2, 2, 1, 0];
+        break;
+      case 'classical':
+        bands = [3, 2, 1, 0, -1, -1, 0, 1];
+        break;
+      case 'bass_boost':
+        bands = [4, 3, 2, 1, 0, 0, 0, 0];
+        break;
+      default:
+        bands = [0, 0, 0, 0, 0, 0, 0, 0];
+    }
+    
+    setEqualizerBands(bands);
+    AsyncStorage.setItem('equalizerBands', JSON.stringify(bands));
+  };
+
+  const addToQueue = (song: Song) => {
+    const newQueue = [...playQueue, song];
+    setPlayQueue(newQueue);
+    Alert.alert('Agregado', `"${song.title}" agregada a la cola`);
+  };
+
+  const playFromQueue = async (index: number) => {
+    const song = playQueue[index];
+    if (song) {
+      await playSong(song);
+      setCurrentQueueIndex(index);
+    }
+  };
+
+  const removeFromQueue = (index: number) => {
+    const newQueue = playQueue.filter((_, i) => i !== index);
+    setPlayQueue(newQueue);
+    if (currentQueueIndex > index) {
+      setCurrentQueueIndex(currentQueueIndex - 1);
+    }
+  };
+
+  const getThemeColors = () => {
+    if (themeMode === 'light') {
+      return {
+        background: '#F5F5F5',
+        surface: '#FFFFFF',
+        text: '#1A1A1A',
+        textSecondary: '#666666',
+        accent: '#FF6B35',
+        accentLight: 'rgba(255, 107, 53, 0.1)',
+      };
+    } else {
+      return {
+        background: '#1A1A1A',
+        surface: '#2A2A2A',
+        text: '#FFFFFF',
+        textSecondary: '#CCCCCC',
+        accent: '#FF6B35',
+        accentLight: 'rgba(255, 107, 53, 0.2)',
+      };
+    }
+  };
+
+  // Existing functions below this line...
     return songs.filter(song => 
       selectedFolders.length === 0 || selectedFolders.includes(song.folder_path)
     );
