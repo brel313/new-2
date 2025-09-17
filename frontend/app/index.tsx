@@ -18,11 +18,10 @@ import {
   Switch,
   TextInput,
   Animated,
-  BackHandler,
 } from 'react-native';
 import { Audio, AVPlaybackStatus } from 'expo-av';
 import * as MediaLibrary from 'expo-media-library';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Slider from '@react-native-community/slider';
 import * as DocumentPicker from 'expo-document-picker';
@@ -44,7 +43,6 @@ interface Song {
   artwork?: string;
   format: string;
   size: number;
-  lyrics?: string;
   genre?: string;
   year?: number;
 }
@@ -72,12 +70,8 @@ interface PlayHistoryItem {
   played_at: Date;
 }
 
-interface AudioVisualizerData {
-  frequency: number[];
-  amplitude: number;
-}
-
 export default function MusicPlayer() {
+  // Basic states
   const [songs, setSongs] = useState<Song[]>([]);
   const [currentSong, setCurrentSong] = useState<Song | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -98,27 +92,22 @@ export default function MusicPlayer() {
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState('');
   
-  // New enhanced features
-  const [currentView, setCurrentView] = useState<'player' | 'playlist' | 'search' | 'lyrics' | 'equalizer'>('player');
-  const [themeMode, setThemeMode] = useState<'light' | 'dark' | 'auto'>('dark');
+  // Enhanced features states
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Song[]>([]);
   const [playHistory, setPlayHistory] = useState<PlayHistoryItem[]>([]);
-  const [playQueue, setPlayQueue] = useState<Song[]>([]);
-  const [currentQueueIndex, setCurrentQueueIndex] = useState(0);
+  const [showSearch, setShowSearch] = useState(false);
+  const [showLyrics, setShowLyrics] = useState(false);
   const [sleepTimer, setSleepTimer] = useState(0);
   const [sleepTimerActive, setSleepTimerActive] = useState(false);
-  const [showLyrics, setShowLyrics] = useState(false);
-  const [showEqualizer, setShowEqualizer] = useState(false);
   const [equalizerBands, setEqualizerBands] = useState([0, 0, 0, 0, 0, 0, 0, 0]);
-  const [visualizerData, setVisualizerData] = useState<AudioVisualizerData>({ frequency: [], amplitude: 0 });
-  const [showSleepTimer, setShowSleepTimer] = useState(false);
   
-  // Animation values
+  // Animation refs
   const albumRotation = useRef(new Animated.Value(0)).current;
   const playButtonScale = useRef(new Animated.Value(1)).current;
   const visualizerBars = useRef(Array.from({ length: 20 }, () => new Animated.Value(0.1))).current;
 
+  // Sound refs
   const soundRef = useRef<Audio.Sound | null>(null);
   const positionUpdateRef = useRef<NodeJS.Timeout | null>(null);
   const sleepTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -132,6 +121,12 @@ export default function MusicPlayer() {
       }
       if (positionUpdateRef.current) {
         clearInterval(positionUpdateRef.current);
+      }
+      if (sleepTimerRef.current) {
+        clearTimeout(sleepTimerRef.current);
+      }
+      if (visualizerRef.current) {
+        clearInterval(visualizerRef.current);
       }
     };
   }, []);
@@ -153,6 +148,96 @@ export default function MusicPlayer() {
       console.error('Error initializing app:', error);
       Alert.alert('Error', 'Failed to initialize music player');
     }
+  };
+
+  // Enhanced animation functions
+  const startAlbumRotation = () => {
+    albumRotation.setValue(0);
+    Animated.loop(
+      Animated.timing(albumRotation, {
+        toValue: 1,
+        duration: 20000,
+        useNativeDriver: true,
+      })
+    ).start();
+  };
+
+  const stopAlbumRotation = () => {
+    albumRotation.stopAnimation();
+  };
+
+  const animatePlayButton = () => {
+    Animated.sequence([
+      Animated.timing(playButtonScale, {
+        toValue: 0.9,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(playButtonScale, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  const startVisualizer = () => {
+    visualizerRef.current = setInterval(() => {
+      visualizerBars.forEach((bar) => {
+        const randomHeight = Math.random() * 0.8 + 0.2;
+        Animated.timing(bar, {
+          toValue: randomHeight,
+          duration: 150 + Math.random() * 100,
+          useNativeDriver: false,
+        }).start();
+      });
+    }, 200);
+  };
+
+  const stopVisualizer = () => {
+    if (visualizerRef.current) {
+      clearInterval(visualizerRef.current);
+      visualizerRef.current = null;
+    }
+    visualizerBars.forEach(bar => {
+      Animated.timing(bar, {
+        toValue: 0.1,
+        duration: 300,
+        useNativeDriver: false,
+      }).start();
+    });
+  };
+
+  const addToPlayHistory = async (song: Song) => {
+    const historyItem: PlayHistoryItem = {
+      id: Date.now().toString(),
+      song,
+      played_at: new Date(),
+    };
+
+    const newHistory = [historyItem, ...playHistory.slice(0, 49)];
+    setPlayHistory(newHistory);
+    
+    try {
+      await AsyncStorage.setItem('playHistory', JSON.stringify(newHistory));
+    } catch (error) {
+      console.error('Error saving play history:', error);
+    }
+  };
+
+  const searchSongs = (query: string) => {
+    setSearchQuery(query);
+    if (query.trim() === '') {
+      setSearchResults([]);
+      return;
+    }
+
+    const filteredSongs = songs.filter(song =>
+      song.title.toLowerCase().includes(query.toLowerCase()) ||
+      song.artist.toLowerCase().includes(query.toLowerCase()) ||
+      song.album.toLowerCase().includes(query.toLowerCase())
+    );
+    setSearchResults(filteredSongs);
   };
 
   const requestPermissions = async () => {
@@ -183,9 +268,7 @@ export default function MusicPlayer() {
       setIsScanning(true);
       setIsLoading(true);
       setScanProgress('Iniciando escaneo...');
-      console.log('Scanning for music...');
 
-      // First, get all audio assets
       let allAssets: MediaLibrary.Asset[] = [];
       let hasNextPage = true;
       let endCursor: string | undefined;
@@ -205,8 +288,6 @@ export default function MusicPlayer() {
         setScanProgress(`Encontrados ${allAssets.length} archivos de audio...`);
       }
 
-      console.log(`Found ${allAssets.length} audio files`);
-
       const folderMap = new Map<string, { songs: Song[], count: number }>();
       const musicFiles: Song[] = [];
 
@@ -217,23 +298,21 @@ export default function MusicPlayer() {
         try {
           const assetInfo = await MediaLibrary.getAssetInfoAsync(asset);
           const folderPath = assetInfo.localUri?.split('/').slice(0, -1).join('/') || '';
-          const folderName = folderPath.split('/').pop() || 'Root';
-
+          
           const song: Song = {
             id: asset.id,
-            title: asset.filename.replace(/\.[^/.]+$/, ''),
+            title: asset.filename.replace(/\.[^/.]+$/, ""),
             artist: 'Artista Desconocido',
             album: 'Álbum Desconocido',
-            duration: Math.floor(asset.duration),
+            duration: asset.duration * 1000,
             file_path: assetInfo.localUri || asset.uri,
             folder_path: folderPath,
-            format: asset.filename.split('.').pop() || '',
-            size: 0,
+            format: asset.filename.split('.').pop()?.toLowerCase() || 'unknown',
+            size: assetInfo.mediaType ? 0 : 0,
           };
 
           musicFiles.push(song);
 
-          // Group by folder
           if (!folderMap.has(folderPath)) {
             folderMap.set(folderPath, { songs: [], count: 0 });
           }
@@ -266,12 +345,11 @@ export default function MusicPlayer() {
         }
       }
 
-      // Create folder info array
       const folders: FolderInfo[] = Array.from(folderMap.entries()).map(([path, data]) => ({
         path,
         name: path.split('/').pop() || 'Root',
         songCount: data.count,
-        selected: true, // Select all folders by default
+        selected: true,
       }));
 
       setSongs(musicFiles);
@@ -297,6 +375,10 @@ export default function MusicPlayer() {
       setIsLoading(false);
       Alert.alert('Error', 'Failed to scan for music files');
     }
+  };
+
+  const getFilteredSongs = () => {
+    return songs.filter(song => selectedFolders.includes(song.folder_path));
   };
 
   const playRandomSong = async (songList?: Song[]) => {
@@ -328,7 +410,11 @@ export default function MusicPlayer() {
       setCurrentSong(song);
 
       // Add haptic feedback
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      try {
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      } catch (error) {
+        console.log('Haptic feedback not available');
+      }
 
       const { sound: newSound } = await Audio.Sound.createAsync(
         { uri: song.file_path },
@@ -344,7 +430,7 @@ export default function MusicPlayer() {
       setIsPlaying(true);
       setIsLoading(false);
 
-      // Start animations and visualizer
+      // Start animations
       startAlbumRotation();
       startVisualizer();
       animatePlayButton();
@@ -387,14 +473,12 @@ export default function MusicPlayer() {
   };
 
   const handleSongEnd = async () => {
-    if (repeatMode === 'one') {
-      return; // Song will loop automatically
-    }
-
     if (repeatMode === 'all' || shuffleMode) {
       await playRandomSong();
     } else {
       setIsPlaying(false);
+      stopAlbumRotation();
+      stopVisualizer();
     }
   };
 
@@ -403,7 +487,12 @@ export default function MusicPlayer() {
       if (!soundRef.current) return;
 
       // Add haptic feedback
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      try {
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch (error) {
+        console.log('Haptic feedback not available');
+      }
+      
       animatePlayButton();
 
       if (isPlaying) {
@@ -428,7 +517,6 @@ export default function MusicPlayer() {
 
   const skipToPrevious = async () => {
     if (position > 5000) {
-      // If more than 5 seconds played, restart current song
       if (soundRef.current) {
         await soundRef.current.setPositionAsync(0);
       }
@@ -456,6 +544,32 @@ export default function MusicPlayer() {
     await saveSettings({ repeat_mode: nextMode });
   };
 
+  const toggleFavorite = async (songId: string) => {
+    try {
+      const isFavorite = favorites.includes(songId);
+      
+      if (isFavorite) {
+        const newFavorites = favorites.filter(id => id !== songId);
+        setFavorites(newFavorites);
+        await fetch(`${EXPO_PUBLIC_BACKEND_URL}/api/favorites/${songId}`, {
+          method: 'DELETE',
+        });
+      } else {
+        const newFavorites = [...favorites, songId];
+        setFavorites(newFavorites);
+        await fetch(`${EXPO_PUBLIC_BACKEND_URL}/api/favorites`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ song_id: songId }),
+        });
+      }
+      
+      await AsyncStorage.setItem('favorites', JSON.stringify(favorites));
+    } catch (error) {
+      console.error('Error toggling favorite:', error);
+    }
+  };
+
   const handleVolumeChange = async (value: number) => {
     setVolume(value);
     if (soundRef.current) {
@@ -472,350 +586,79 @@ export default function MusicPlayer() {
     }
   };
 
-  const toggleFavorite = async (songId: string) => {
-    try {
-      const isFavorite = favorites.includes(songId);
-      
-      if (isFavorite) {
-        await fetch(`${EXPO_PUBLIC_BACKEND_URL}/api/favorites/${songId}`, {
-          method: 'DELETE',
-        });
-        setFavorites(favorites.filter(id => id !== songId));
-      } else {
-        await fetch(`${EXPO_PUBLIC_BACKEND_URL}/api/favorites`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ song_id: songId }),
-        });
-        setFavorites([...favorites, songId]);
-      }
-    } catch (error) {
-      console.error('Error toggling favorite:', error);
-    }
-  };
-
-  const toggleFolderSelection = (folderPath: string) => {
-    const updatedFolders = availableFolders.map(folder =>
-      folder.path === folderPath ? { ...folder, selected: !folder.selected } : folder
-    );
-    setAvailableFolders(updatedFolders);
-    
-    const newSelectedFolders = updatedFolders
-      .filter(folder => folder.selected)
-      .map(folder => folder.path);
-    
-    setSelectedFolders(newSelectedFolders);
-    saveSettings({ selected_folders: newSelectedFolders });
-  };
-
-  const selectAllFolders = () => {
-    const updatedFolders = availableFolders.map(folder => ({ ...folder, selected: true }));
-    setAvailableFolders(updatedFolders);
-    const allFolderPaths = updatedFolders.map(folder => folder.path);
-    setSelectedFolders(allFolderPaths);
-    saveSettings({ selected_folders: allFolderPaths });
-  };
-
-  const deselectAllFolders = () => {
-    const updatedFolders = availableFolders.map(folder => ({ ...folder, selected: false }));
-    setAvailableFolders(updatedFolders);
-    setSelectedFolders([]);
-    saveSettings({ selected_folders: [] });
+  const formatTime = (milliseconds: number) => {
+    const totalSeconds = Math.floor(milliseconds / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
   const loadSettings = async () => {
     try {
-      const response = await fetch(`${EXPO_PUBLIC_BACKEND_URL}/api/settings`);
-      if (response.ok) {
-        const settings: UserSettings = await response.json();
-        setSelectedFolders(settings.selected_folders);
-        setShuffleMode(settings.shuffle_mode);
-        setRepeatMode(settings.repeat_mode as 'none' | 'one' | 'all');
-        setVolume(settings.volume);
+      const settingsString = await AsyncStorage.getItem('settings');
+      if (settingsString) {
+        const settings: UserSettings = JSON.parse(settingsString);
+        setSelectedFolders(settings.selected_folders || []);
+        setShuffleMode(settings.shuffle_mode || true);
+        setRepeatMode(settings.repeat_mode as 'none' | 'one' | 'all' || 'none');
+        setVolume(settings.volume || 1.0);
       }
     } catch (error) {
-      console.log('Error loading settings:', error);
+      console.error('Error loading settings:', error);
     }
   };
 
-  const saveSettings = async (updates: Partial<UserSettings>) => {
+  const saveSettings = async (newSettings: Partial<UserSettings>) => {
     try {
-      await fetch(`${EXPO_PUBLIC_BACKEND_URL}/api/settings`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(updates),
-      });
+      const existingSettings = await AsyncStorage.getItem('settings');
+      const settings = existingSettings ? JSON.parse(existingSettings) : {};
+      const updatedSettings = { ...settings, ...newSettings };
+      await AsyncStorage.setItem('settings', JSON.stringify(updatedSettings));
     } catch (error) {
-      console.log('Error saving settings:', error);
+      console.error('Error saving settings:', error);
     }
   };
 
   const loadFavorites = async () => {
     try {
-      const response = await fetch(`${EXPO_PUBLIC_BACKEND_URL}/api/favorites`);
-      if (response.ok) {
-        const favoritesData = await response.json();
-        setFavorites(favoritesData.map((fav: any) => fav.song_id));
+      const favoritesString = await AsyncStorage.getItem('favorites');
+      if (favoritesString) {
+        setFavorites(JSON.parse(favoritesString));
       }
     } catch (error) {
       console.log('Error loading favorites:', error);
     }
   };
 
-  // Enhanced features functions
-  const startAlbumRotation = () => {
-    albumRotation.setValue(0);
-    Animated.loop(
-      Animated.timing(albumRotation, {
-        toValue: 1,
-        duration: 20000,
-        useNativeDriver: true,
-      })
-    ).start();
-  };
-
-  const stopAlbumRotation = () => {
-    albumRotation.stopAnimation();
-  };
-
-  const animatePlayButton = () => {
-    Animated.sequence([
-      Animated.timing(playButtonScale, {
-        toValue: 0.9,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(playButtonScale, {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  };
-
-  const startVisualizer = () => {
-    visualizerRef.current = setInterval(() => {
-      visualizerBars.forEach((bar, index) => {
-        const randomHeight = Math.random() * 0.8 + 0.2;
-        Animated.timing(bar, {
-          toValue: randomHeight,
-          duration: 150 + Math.random() * 100,
-          useNativeDriver: false,
-        }).start();
-      });
-      
-      // Update visualizer data
-      setVisualizerData({
-        frequency: Array.from({ length: 20 }, () => Math.random() * 100),
-        amplitude: Math.random() * 100,
-      });
-    }, 200);
-  };
-
-  const stopVisualizer = () => {
-    if (visualizerRef.current) {
-      clearInterval(visualizerRef.current);
-      visualizerRef.current = null;
-    }
-    visualizerBars.forEach(bar => {
-      Animated.timing(bar, {
-        toValue: 0.1,
-        duration: 300,
-        useNativeDriver: false,
-      }).start();
-    });
-  };
-
-  const searchSongs = (query: string) => {
-    setSearchQuery(query);
-    if (query.trim() === '') {
-      setSearchResults([]);
-      return;
-    }
-
-    const filteredSongs = songs.filter(song =>
-      song.title.toLowerCase().includes(query.toLowerCase()) ||
-      song.artist.toLowerCase().includes(query.toLowerCase()) ||
-      song.album.toLowerCase().includes(query.toLowerCase())
-    );
-    setSearchResults(filteredSongs);
-  };
-
-  const addToPlayHistory = async (song: Song) => {
-    const historyItem: PlayHistoryItem = {
-      id: Date.now().toString(),
-      song,
-      played_at: new Date(),
-    };
-
-    const newHistory = [historyItem, ...playHistory.slice(0, 49)]; // Keep last 50
-    setPlayHistory(newHistory);
+  const toggleFolderSelection = (folderPath: string) => {
+    const isSelected = selectedFolders.includes(folderPath);
+    let newSelectedFolders: string[];
     
-    try {
-      await AsyncStorage.setItem('playHistory', JSON.stringify(newHistory));
-    } catch (error) {
-      console.error('Error saving play history:', error);
-    }
-  };
-
-  const startSleepTimer = (minutes: number) => {
-    setSleepTimer(minutes);
-    setSleepTimerActive(true);
-    
-    sleepTimerRef.current = setTimeout(() => {
-      pauseMusic();
-      setSleepTimerActive(false);
-      setSleepTimer(0);
-      Alert.alert('Temporizador', 'La música se pausó automáticamente');
-    }, minutes * 60 * 1000);
-  };
-
-  const cancelSleepTimer = () => {
-    if (sleepTimerRef.current) {
-      clearTimeout(sleepTimerRef.current);
-      sleepTimerRef.current = null;
-    }
-    setSleepTimerActive(false);
-    setSleepTimer(0);
-  };
-
-  const pauseMusic = async () => {
-    try {
-      if (soundRef.current && isPlaying) {
-        await soundRef.current.pauseAsync();
-        setIsPlaying(false);
-        stopAlbumRotation();
-        stopVisualizer();
-      }
-    } catch (error) {
-      console.error('Error pausing music:', error);
-    }
-  };
-
-  const updateEqualizer = (bandIndex: number, value: number) => {
-    const newBands = [...equalizerBands];
-    newBands[bandIndex] = value;
-    setEqualizerBands(newBands);
-    
-    // Note: In a real app, you'd apply these values to an audio processor
-    // For now, we'll just store the values
-    AsyncStorage.setItem('equalizerBands', JSON.stringify(newBands));
-  };
-
-  const applyEqualizerPreset = (preset: string) => {
-    let bands: number[] = [];
-    
-    switch (preset) {
-      case 'rock':
-        bands = [3, 2, -1, -2, 1, 2, 3, 4];
-        break;
-      case 'pop':
-        bands = [1, 2, 3, 2, 0, -1, -1, 1];
-        break;
-      case 'jazz':
-        bands = [2, 1, 0, 1, 2, 2, 1, 0];
-        break;
-      case 'classical':
-        bands = [3, 2, 1, 0, -1, -1, 0, 1];
-        break;
-      case 'bass_boost':
-        bands = [4, 3, 2, 1, 0, 0, 0, 0];
-        break;
-      default:
-        bands = [0, 0, 0, 0, 0, 0, 0, 0];
-    }
-    
-    setEqualizerBands(bands);
-    AsyncStorage.setItem('equalizerBands', JSON.stringify(bands));
-  };
-
-  const addToQueue = (song: Song) => {
-    const newQueue = [...playQueue, song];
-    setPlayQueue(newQueue);
-    Alert.alert('Agregado', `"${song.title}" agregada a la cola`);
-  };
-
-  const playFromQueue = async (index: number) => {
-    const song = playQueue[index];
-    if (song) {
-      await playSong(song);
-      setCurrentQueueIndex(index);
-    }
-  };
-
-  const removeFromQueue = (index: number) => {
-    const newQueue = playQueue.filter((_, i) => i !== index);
-    setPlayQueue(newQueue);
-    if (currentQueueIndex > index) {
-      setCurrentQueueIndex(currentQueueIndex - 1);
-    }
-  };
-
-  const getThemeColors = () => {
-    if (themeMode === 'light') {
-      return {
-        background: '#F5F5F5',
-        surface: '#FFFFFF',
-        text: '#1A1A1A',
-        textSecondary: '#666666',
-        accent: '#FF6B35',
-        accentLight: 'rgba(255, 107, 53, 0.1)',
-      };
+    if (isSelected) {
+      newSelectedFolders = selectedFolders.filter(path => path !== folderPath);
     } else {
-      return {
-        background: '#1A1A1A',
-        surface: '#2A2A2A',
-        text: '#FFFFFF',
-        textSecondary: '#CCCCCC',
-        accent: '#FF6B35',
-        accentLight: 'rgba(255, 107, 53, 0.2)',
-      };
+      newSelectedFolders = [...selectedFolders, folderPath];
     }
-  };
-
-  // Existing functions below this line...
-    return songs.filter(song => 
-      selectedFolders.length === 0 || selectedFolders.includes(song.folder_path)
+    
+    setSelectedFolders(newSelectedFolders);
+    setAvailableFolders(prev => 
+      prev.map(folder => 
+        folder.path === folderPath 
+          ? { ...folder, selected: !isSelected }
+          : folder
+      )
     );
+    
+    saveSettings({ selected_folders: newSelectedFolders });
   };
 
-  const formatTime = (milliseconds: number) => {
-    const seconds = Math.floor(milliseconds / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-  };
-
-  const getRepeatIcon = () => {
-    switch (repeatMode) {
-      case 'one': return 'repeat-outline';
-      case 'all': return 'repeat';
-      default: return 'repeat-outline';
-    }
-  };
-
+  // Render functions
   const renderSongItem = ({ item }: { item: Song }) => (
-    <TouchableOpacity
-      style={[
-        styles.songItem,
-        currentSong?.id === item.id && styles.currentSongItem
-      ]}
-      onPress={() => playSong(item)}
-    >
+    <TouchableOpacity style={styles.songItem} onPress={() => playSong(item)}>
       <View style={styles.songInfo}>
-        <Text style={styles.songTitle} numberOfLines={1}>
-          {item.title}
-        </Text>
-        <Text style={styles.songArtist} numberOfLines={1}>
-          {item.artist} • {item.album}
-        </Text>
-        <Text style={styles.songDuration}>
-          {formatTime(item.duration * 1000)}
-        </Text>
+        <Text style={styles.songTitle} numberOfLines={1}>{item.title}</Text>
+        <Text style={styles.songArtist} numberOfLines={1}>{item.artist}</Text>
+        <Text style={styles.songDuration}>{formatTime(item.duration)}</Text>
       </View>
       <TouchableOpacity
         style={styles.favoriteButton}
@@ -846,6 +689,25 @@ export default function MusicPlayer() {
     </View>
   );
 
+  const renderVisualizer = () => (
+    <View style={styles.visualizerContainer}>
+      {visualizerBars.map((bar, index) => (
+        <Animated.View
+          key={index}
+          style={[
+            styles.visualizerBar,
+            {
+              height: bar.interpolate({
+                inputRange: [0, 1],
+                outputRange: [2, 40],
+              }),
+            },
+          ]}
+        />
+      ))}
+    </View>
+  );
+
   // Permission check inside the component
   if (permissionStatus !== 'granted') {
     return (
@@ -869,143 +731,183 @@ export default function MusicPlayer() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#1a1a1a" />
       
-      {/* Header */}
+      {/* Enhanced Header with Search */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => setShowSettings(true)}>
           <Ionicons name="settings-outline" size={24} color="#FF6B35" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Reproductor de Música</Text>
-        <TouchableOpacity onPress={() => setShowPlaylist(true)}>
-          <Ionicons name="list-outline" size={24} color="#FF6B35" />
+        <Text style={styles.headerTitle}>🎵 Reproductor Pro</Text>
+        <TouchableOpacity onPress={() => setShowSearch(!showSearch)}>
+          <Ionicons name="search-outline" size={24} color="#FF6B35" />
         </TouchableOpacity>
       </View>
 
-      {/* Main Player */}
-      <View style={styles.playerContainer}>
-        {currentSong ? (
-          <React.Fragment>
-            {/* Album Art */}
-            <View style={styles.albumArtContainer}>
-              {currentSong.artwork ? (
-                <Image source={{ uri: currentSong.artwork }} style={styles.albumArt} />
-              ) : (
-                <View style={styles.albumArtPlaceholder}>
-                  <Ionicons name="musical-notes" size={80} color="#FF6B35" />
-                </View>
-              )}
-            </View>
-
-            {/* Song Info */}
-            <View style={styles.songInfoContainer}>
-              <Text style={styles.currentSongTitle} numberOfLines={2}>
-                {currentSong.title}
-              </Text>
-              <Text style={styles.currentSongArtist} numberOfLines={1}>
-                {currentSong.artist}
-              </Text>
-            </View>
-
-            {/* Progress Slider */}
-            <View style={styles.progressContainer}>
-              <Text style={styles.timeText}>{formatTime(position)}</Text>
-              <Slider
-                style={styles.progressSlider}
-                minimumValue={0}
-                maximumValue={100}
-                value={duration > 0 ? (position / duration) * 100 : 0}
-                onSlidingComplete={handleSeek}
-                minimumTrackTintColor="#FF6B35"
-                maximumTrackTintColor="#444"
-                thumbStyle={{ backgroundColor: '#FF6B35' }}
-              />
-              <Text style={styles.timeText}>{formatTime(duration)}</Text>
-            </View>
-
-            {/* Controls */}
-            <View style={styles.controlsContainer}>
-              <TouchableOpacity
-                style={[styles.controlButton, shuffleMode && styles.activeControl]}
-                onPress={toggleShuffle}
-              >
-                <Ionicons name="shuffle" size={24} color={shuffleMode ? '#FF6B35' : '#666'} />
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.controlButton} onPress={skipToPrevious}>
-                <Ionicons name="play-skip-back" size={32} color="#FFF" />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.playButton}
-                onPress={togglePlayPause}
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <ActivityIndicator size="large" color="#FFF" />
-                ) : (
-                  <Ionicons
-                    name={isPlaying ? 'pause' : 'play'}
-                    size={40}
-                    color="#FFF"
-                  />
-                )}
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.controlButton} onPress={skipToNext}>
-                <Ionicons name="play-skip-forward" size={32} color="#FFF" />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.controlButton, repeatMode !== 'none' && styles.activeControl]}
-                onPress={toggleRepeat}
-              >
-                <Ionicons
-                  name={getRepeatIcon()}
-                  size={24}
-                  color={repeatMode !== 'none' ? '#FF6B35' : '#666'}
-                />
-              </TouchableOpacity>
-            </View>
-
-            {/* Volume Control */}
-            <View style={styles.volumeContainer}>
-              <Ionicons name="volume-low" size={20} color="#666" />
-              <Slider
-                style={styles.volumeSlider}
-                minimumValue={0}
-                maximumValue={1}
-                value={volume}
-                onValueChange={handleVolumeChange}
-                minimumTrackTintColor="#FF6B35"
-                maximumTrackTintColor="#444"
-                thumbStyle={{ backgroundColor: '#FF6B35' }}
-              />
-              <Ionicons name="volume-high" size={20} color="#666" />
-            </View>
-          </React.Fragment>
-        ) : (
-          <View style={styles.noMusicContainer}>
-            <Ionicons name="musical-notes-outline" size={100} color="#666" />
-            <Text style={styles.noMusicText}>No hay música reproduciéndose</Text>
-            {songs.length > 0 && (
-              <TouchableOpacity style={styles.playRandomButton} onPress={() => playRandomSong()}>
-                <Text style={styles.playRandomButtonText}>Reproducir Música Aleatoria</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
-      </View>
-
-      {/* Loading Overlay */}
-      {(isLoading || isScanning) && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color="#FF6B35" />
-          <Text style={styles.loadingText}>
-            {isScanning ? scanProgress : 'Cargando...'}
-          </Text>
+      {/* Search Bar */}
+      {showSearch && (
+        <View style={styles.searchContainer}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Buscar canciones, artistas, álbumes..."
+            placeholderTextColor="#666"
+            value={searchQuery}
+            onChangeText={searchSongs}
+            autoFocus
+          />
         </View>
       )}
 
-      {/* Playlist Modal */}
+      {/* Main Player Container */}
+      <View style={styles.playerContainer}>
+        {/* Enhanced Album Art with Animation */}
+        <View style={styles.albumArtContainer}>
+          <Animated.View
+            style={[
+              styles.albumArtWrapper,
+              {
+                transform: [{
+                  rotate: albumRotation.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ['0deg', '360deg'],
+                  }),
+                }],
+              },
+            ]}
+          >
+            {currentSong?.artwork ? (
+              <Image source={{ uri: currentSong.artwork }} style={styles.albumArt} />
+            ) : (
+              <LinearGradient
+                colors={['#FF6B35', '#FF8C69']}
+                style={styles.albumArtPlaceholder}
+              >
+                <Ionicons name="musical-notes" size={80} color="#FFF" />
+              </LinearGradient>
+            )}
+          </Animated.View>
+        </View>
+
+        {/* Enhanced Song Info */}
+        <View style={styles.songInfoContainer}>
+          <Text style={styles.currentSongTitle} numberOfLines={2}>
+            {currentSong?.title || 'Sin canción seleccionada'}
+          </Text>
+          <Text style={styles.currentSongArtist} numberOfLines={1}>
+            {currentSong?.artist || 'Artista desconocido'}
+          </Text>
+          {currentSong?.album && (
+            <Text style={styles.currentSongAlbum} numberOfLines={1}>
+              {currentSong.album}
+            </Text>
+          )}
+        </View>
+
+        {/* Audio Visualizer */}
+        {isPlaying && renderVisualizer()}
+
+        {/* Progress Bar */}
+        <View style={styles.progressContainer}>
+          <Text style={styles.timeText}>{formatTime(position)}</Text>
+          <Slider
+            style={styles.progressSlider}
+            minimumValue={0}
+            maximumValue={100}
+            value={duration > 0 ? (position / duration) * 100 : 0}
+            onSlidingComplete={handleSeek}
+            minimumTrackTintColor="#FF6B35"
+            maximumTrackTintColor="#666"
+            thumbStyle={{ backgroundColor: '#FF6B35' }}
+          />
+          <Text style={styles.timeText}>{formatTime(duration)}</Text>
+        </View>
+
+        {/* Enhanced Controls */}
+        <View style={styles.controlsContainer}>
+          <TouchableOpacity 
+            style={[styles.controlButton, shuffleMode && styles.activeControl]} 
+            onPress={toggleShuffle}
+          >
+            <Ionicons name="shuffle" size={24} color={shuffleMode ? '#FF6B35' : '#CCC'} />
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.controlButton} onPress={skipToPrevious}>
+            <Ionicons name="play-skip-back" size={32} color="#CCC" />
+          </TouchableOpacity>
+          
+          <Animated.View style={{ transform: [{ scale: playButtonScale }] }}>
+            <TouchableOpacity style={styles.playButton} onPress={togglePlayPause}>
+              {isLoading ? (
+                <ActivityIndicator size="large" color="#FFF" />
+              ) : (
+                <Ionicons name={isPlaying ? 'pause' : 'play'} size={40} color="#FFF" />
+              )}
+            </TouchableOpacity>
+          </Animated.View>
+          
+          <TouchableOpacity style={styles.controlButton} onPress={skipToNext}>
+            <Ionicons name="play-skip-forward" size={32} color="#CCC" />
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.controlButton, repeatMode !== 'none' && styles.activeControl]} 
+            onPress={toggleRepeat}
+          >
+            <Ionicons 
+              name={repeatMode === 'one' ? 'repeat' : 'repeat'} 
+              size={24} 
+              color={repeatMode !== 'none' ? '#FF6B35' : '#CCC'} 
+            />
+          </TouchableOpacity>
+        </View>
+
+        {/* Volume Control */}
+        <View style={styles.volumeContainer}>
+          <Ionicons name="volume-low" size={20} color="#CCC" />
+          <Slider
+            style={styles.volumeSlider}
+            minimumValue={0}
+            maximumValue={1}
+            value={volume}
+            onValueChange={handleVolumeChange}
+            minimumTrackTintColor="#FF6B35"
+            maximumTrackTintColor="#666"
+            thumbStyle={{ backgroundColor: '#FF6B35' }}
+          />
+          <Ionicons name="volume-high" size={20} color="#CCC" />
+        </View>
+
+        {/* Quick Actions */}
+        <View style={styles.quickActionsContainer}>
+          <TouchableOpacity 
+            style={styles.quickActionButton} 
+            onPress={() => setShowPlaylist(true)}
+          >
+            <Ionicons name="list" size={20} color="#FF6B35" />
+            <Text style={styles.quickActionText}>Lista</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.quickActionButton} 
+            onPress={() => currentSong && toggleFavorite(currentSong.id)}
+          >
+            <Ionicons 
+              name={currentSong && favorites.includes(currentSong.id) ? 'heart' : 'heart-outline'} 
+              size={20} 
+              color="#FF6B35" 
+            />
+            <Text style={styles.quickActionText}>Favorito</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.quickActionButton} 
+            onPress={() => setShowLyrics(true)}
+          >
+            <Ionicons name="document-text" size={20} color="#FF6B35" />
+            <Text style={styles.quickActionText}>Letras</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Enhanced Playlist Modal */}
       <Modal
         visible={showPlaylist}
         animationType="slide"
@@ -1014,69 +916,25 @@ export default function MusicPlayer() {
         <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>
-              Lista de Canciones ({getFilteredSongs().length})
+              {searchQuery ? `Resultados: ${searchResults.length}` : `Canciones: ${getFilteredSongs().length}`}
             </Text>
             <TouchableOpacity onPress={() => setShowPlaylist(false)}>
               <Ionicons name="close" size={24} color="#FFF" />
             </TouchableOpacity>
           </View>
           <FlatList
-            data={getFilteredSongs()}
+            data={searchQuery ? searchResults : getFilteredSongs()}
             keyExtractor={(item) => item.id}
             renderItem={renderSongItem}
             style={styles.songList}
+            showsVerticalScrollIndicator={false}
             ListEmptyComponent={
               <View style={styles.emptyList}>
-                <Ionicons name="musical-notes-outline" size={60} color="#666" />
-                <Text style={styles.emptyListText}>No hay canciones en las carpetas seleccionadas</Text>
-                <TouchableOpacity 
-                  style={styles.emptyListButton} 
-                  onPress={() => setShowFolderSelection(true)}
-                >
-                  <Text style={styles.emptyListButtonText}>Seleccionar Carpetas</Text>
-                </TouchableOpacity>
-              </View>
-            }
-          />
-        </SafeAreaView>
-      </Modal>
-
-      {/* Folder Selection Modal */}
-      <Modal
-        visible={showFolderSelection}
-        animationType="slide"
-        presentationStyle="formSheet"
-      >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Seleccionar Carpetas</Text>
-            <TouchableOpacity onPress={() => setShowFolderSelection(false)}>
-              <Ionicons name="close" size={24} color="#FFF" />
-            </TouchableOpacity>
-          </View>
-          
-          <View style={styles.folderActions}>
-            <TouchableOpacity style={styles.folderActionButton} onPress={selectAllFolders}>
-              <Text style={styles.folderActionText}>Seleccionar Todas</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.folderActionButton} onPress={deselectAllFolders}>
-              <Text style={styles.folderActionText}>Deseleccionar Todas</Text>
-            </TouchableOpacity>
-          </View>
-
-          <FlatList
-            data={availableFolders}
-            keyExtractor={(item) => item.path}
-            renderItem={renderFolderItem}
-            style={styles.folderList}
-            ListEmptyComponent={
-              <View style={styles.emptyList}>
-                <Ionicons name="folder-outline" size={60} color="#666" />
-                <Text style={styles.emptyListText}>No se encontraron carpetas</Text>
-                <TouchableOpacity 
-                  style={styles.emptyListButton} 
-                  onPress={scanForMusic}
-                >
+                <Ionicons name="musical-notes-outline" size={64} color="#666" />
+                <Text style={styles.emptyListText}>
+                  {searchQuery ? 'No se encontraron resultados' : 'No hay canciones en las carpetas seleccionadas'}
+                </Text>
+                <TouchableOpacity style={styles.emptyListButton} onPress={scanForMusic}>
                   <Text style={styles.emptyListButtonText}>Escanear Música</Text>
                 </TouchableOpacity>
               </View>
@@ -1085,7 +943,7 @@ export default function MusicPlayer() {
         </SafeAreaView>
       </Modal>
 
-      {/* Settings Modal */}
+      {/* Enhanced Settings Modal */}
       <Modal
         visible={showSettings}
         animationType="slide"
@@ -1093,13 +951,13 @@ export default function MusicPlayer() {
       >
         <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Configuración</Text>
+            <Text style={styles.modalTitle}>⚙️ Configuración</Text>
             <TouchableOpacity onPress={() => setShowSettings(false)}>
               <Ionicons name="close" size={24} color="#FFF" />
             </TouchableOpacity>
           </View>
           <ScrollView style={styles.settingsContainer}>
-            <Text style={styles.settingsSection}>Música</Text>
+            <Text style={styles.settingsSection}>🎵 Música</Text>
             
             <TouchableOpacity style={styles.settingsButton} onPress={scanForMusic}>
               <Ionicons name="refresh" size={20} color="#FF6B35" />
@@ -1114,21 +972,86 @@ export default function MusicPlayer() {
               <Text style={styles.settingsButtonText}>Seleccionar Carpetas</Text>
             </TouchableOpacity>
             
-            <Text style={styles.statsText}>
-              {songs.length} canciones encontradas
+            <View style={styles.statsContainer}>
+              <Text style={styles.statsText}>📊 Estadísticas</Text>
+              <Text style={styles.statsDetailText}>
+                {songs.length} canciones encontradas
+              </Text>
+              <Text style={styles.statsDetailText}>
+                {availableFolders.length} carpetas disponibles
+              </Text>
+              <Text style={styles.statsDetailText}>
+                {selectedFolders.length} carpetas seleccionadas
+              </Text>
+              <Text style={styles.statsDetailText}>
+                {getFilteredSongs().length} canciones activas
+              </Text>
+              <Text style={styles.statsDetailText}>
+                {playHistory.length} canciones en historial
+              </Text>
+            </View>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Folder Selection Modal */}
+      <Modal
+        visible={showFolderSelection}
+        animationType="slide"
+        presentationStyle="formSheet"
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>📁 Seleccionar Carpetas</Text>
+            <TouchableOpacity onPress={() => setShowFolderSelection(false)}>
+              <Ionicons name="close" size={24} color="#FFF" />
+            </TouchableOpacity>
+          </View>
+          <FlatList
+            data={availableFolders}
+            keyExtractor={(item) => item.path}
+            renderItem={renderFolderItem}
+            style={styles.folderList}
+          />
+        </SafeAreaView>
+      </Modal>
+
+      {/* Lyrics Modal */}
+      <Modal
+        visible={showLyrics}
+        animationType="slide"
+        presentationStyle="formSheet"
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>🎤 Letras</Text>
+            <TouchableOpacity onPress={() => setShowLyrics(false)}>
+              <Ionicons name="close" size={24} color="#FFF" />
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={styles.lyricsContainer}>
+            <Text style={styles.lyricsTitle}>
+              {currentSong?.title || 'Sin canción'}
             </Text>
-            <Text style={styles.statsText}>
-              {availableFolders.length} carpetas disponibles
+            <Text style={styles.lyricsArtist}>
+              {currentSong?.artist || 'Artista desconocido'}
             </Text>
-            <Text style={styles.statsText}>
-              {selectedFolders.length} carpetas seleccionadas
-            </Text>
-            <Text style={styles.statsText}>
-              {getFilteredSongs().length} canciones en carpetas seleccionadas
+            <Text style={styles.lyricsText}>
+              {currentSong?.lyrics || 'Letras no disponibles para esta canción.\n\nEsta función se mejorará en futuras actualizaciones para incluir letras automáticas y sincronizadas.'}
             </Text>
           </ScrollView>
         </SafeAreaView>
       </Modal>
+
+      {/* Loading Overlay */}
+      {isScanning && (
+        <View style={styles.loadingOverlay}>
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#FF6B35" />
+            <Text style={styles.loadingText}>{scanProgress}</Text>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -1177,11 +1100,27 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     borderBottomWidth: 1,
     borderBottomColor: '#333',
+    backgroundColor: '#2a2a2a',
   },
   headerTitle: {
     color: '#FFF',
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  searchContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: '#2a2a2a',
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  searchInput: {
+    backgroundColor: '#333',
+    color: '#FFF',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderRadius: 20,
+    fontSize: 16,
   },
   playerContainer: {
     flex: 1,
@@ -1195,11 +1134,17 @@ const styles = StyleSheet.create({
     marginBottom: 30,
     borderRadius: 20,
     overflow: 'hidden',
-    elevation: 5,
-    shadowColor: '#000',
+    elevation: 10,
+    shadowColor: '#FF6B35',
     shadowOffset: { width: 0, height: 5 },
     shadowOpacity: 0.3,
     shadowRadius: 10,
+  },
+  albumArtWrapper: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 20,
+    overflow: 'hidden',
   },
   albumArt: {
     width: '100%',
@@ -1208,13 +1153,25 @@ const styles = StyleSheet.create({
   albumArtPlaceholder: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#333',
     alignItems: 'center',
     justifyContent: 'center',
   },
+  visualizerContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    height: 50,
+    marginBottom: 20,
+  },
+  visualizerBar: {
+    width: 4,
+    backgroundColor: '#FF6B35',
+    marginHorizontal: 1,
+    borderRadius: 2,
+  },
   songInfoContainer: {
     alignItems: 'center',
-    marginBottom: 30,
+    marginBottom: 20,
   },
   currentSongTitle: {
     fontSize: 24,
@@ -1226,6 +1183,12 @@ const styles = StyleSheet.create({
   currentSongArtist: {
     fontSize: 18,
     color: '#CCC',
+    textAlign: 'center',
+    marginBottom: 5,
+  },
+  currentSongAlbum: {
+    fontSize: 14,
+    color: '#999',
     textAlign: 'center',
   },
   progressContainer: {
@@ -1254,10 +1217,10 @@ const styles = StyleSheet.create({
   },
   controlButton: {
     padding: 10,
+    borderRadius: 25,
   },
   activeControl: {
     backgroundColor: 'rgba(255, 107, 53, 0.2)',
-    borderRadius: 25,
   },
   playButton: {
     width: 80,
@@ -1276,49 +1239,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     width: '100%',
+    marginBottom: 20,
   },
   volumeSlider: {
     flex: 1,
     height: 40,
-    marginHorizontal: 15,
+    marginHorizontal: 10,
   },
-  noMusicContainer: {
+  quickActionsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '100%',
+  },
+  quickActionButton: {
     alignItems: 'center',
-    justifyContent: 'center',
+    padding: 10,
   },
-  noMusicText: {
-    fontSize: 18,
-    color: '#666',
-    marginTop: 20,
-    textAlign: 'center',
-  },
-  playRandomButton: {
-    backgroundColor: '#FF6B35',
-    paddingHorizontal: 30,
-    paddingVertical: 15,
-    borderRadius: 25,
-    marginTop: 20,
-  },
-  playRandomButtonText: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  loadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(26, 26, 26, 0.9)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loadingText: {
-    color: '#FFF',
-    fontSize: 16,
-    marginTop: 10,
-    textAlign: 'center',
+  quickActionText: {
+    color: '#CCC',
+    fontSize: 12,
+    marginTop: 5,
   },
   modalContainer: {
     flex: 1,
@@ -1332,10 +1272,11 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     borderBottomWidth: 1,
     borderBottomColor: '#333',
+    backgroundColor: '#2a2a2a',
   },
   modalTitle: {
     color: '#FFF',
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
   },
   songList: {
@@ -1349,9 +1290,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#333',
   },
-  currentSongItem: {
-    backgroundColor: 'rgba(255, 107, 53, 0.1)',
-  },
   songInfo: {
     flex: 1,
   },
@@ -1359,7 +1297,7 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 16,
     fontWeight: 'bold',
-    marginBottom: 5,
+    marginBottom: 2,
   },
   songArtist: {
     color: '#CCC',
@@ -1367,7 +1305,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   songDuration: {
-    color: '#666',
+    color: '#999',
     fontSize: 12,
   },
   favoriteButton: {
@@ -1391,58 +1329,16 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 16,
     fontWeight: 'bold',
-    marginBottom: 5,
+    marginBottom: 2,
   },
   folderPath: {
-    color: '#CCC',
+    color: '#999',
     fontSize: 12,
     marginBottom: 2,
   },
   folderCount: {
-    color: '#666',
-    fontSize: 12,
-  },
-  folderActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#333',
-  },
-  folderActionButton: {
-    backgroundColor: '#FF6B35',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
-  },
-  folderActionText: {
-    color: '#FFF',
+    color: '#CCC',
     fontSize: 14,
-    fontWeight: 'bold',
-  },
-  emptyList: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 40,
-  },
-  emptyListText: {
-    color: '#666',
-    fontSize: 16,
-    textAlign: 'center',
-    marginTop: 20,
-    marginBottom: 20,
-  },
-  emptyListButton: {
-    backgroundColor: '#FF6B35',
-    paddingHorizontal: 30,
-    paddingVertical: 15,
-    borderRadius: 25,
-  },
-  emptyListButtonText: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: 'bold',
   },
   settingsContainer: {
     flex: 1,
@@ -1469,9 +1365,90 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginLeft: 10,
   },
+  statsContainer: {
+    backgroundColor: '#333',
+    padding: 15,
+    borderRadius: 10,
+    marginTop: 20,
+  },
   statsText: {
+    color: '#FF6B35',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  statsDetailText: {
     color: '#CCC',
     fontSize: 14,
     marginBottom: 5,
+  },
+  lyricsContainer: {
+    flex: 1,
+    padding: 20,
+  },
+  lyricsTitle: {
+    color: '#FFF',
+    fontSize: 20,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 5,
+  },
+  lyricsArtist: {
+    color: '#CCC',
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 30,
+  },
+  lyricsText: {
+    color: '#FFF',
+    fontSize: 16,
+    lineHeight: 24,
+    textAlign: 'center',
+  },
+  emptyList: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 50,
+  },
+  emptyListText: {
+    color: '#CCC',
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 20,
+    paddingHorizontal: 40,
+  },
+  emptyListButton: {
+    backgroundColor: '#FF6B35',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  emptyListButtonText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingContainer: {
+    backgroundColor: '#333',
+    padding: 30,
+    borderRadius: 20,
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#FFF',
+    fontSize: 16,
+    marginTop: 15,
+    textAlign: 'center',
   },
 });
