@@ -10,7 +10,7 @@
       "test": "API Health Check",
       "success": true,
       "message": "API is responding correctly",
-      "timestamp": "2025-09-17T02:58:15.573150",
+      "timestamp": "2025-09-17T03:01:37.328581",
       "response": {
         "message": "Music Player API"
       }
@@ -18,10 +18,10 @@
     {
       "test": "Add Song",
       "success": true,
-      "message": "Song added successfully with ID: 1df6bd90-762b-40f9-94ff-fcf5fac8b053",
-      "timestamp": "2025-09-17T02:58:15.626965",
+      "message": "Song added successfully with ID: 942cdb8d-b7e1-4ffe-bb17-e2e726cfe599",
+      "timestamp": "2025-09-17T03:01:37.371969",
       "response": {
-        "id": "1df6bd90-762b-40f9-94ff-fcf5fac8b053",
+        "id": "942cdb8d-b7e1-4ffe-bb17-e2e726cfe599",
         "title": "Bohemian Rhapsody",
         "artist": "Queen",
         "album": "A Night at the Opera",
@@ -31,25 +31,25 @@
         "artwork": null,
         "format": "mp3",
         "size": 8542880,
-        "added_date": "2025-09-17T02:58:15.574662"
+        "added_date": "2025-09-17T03:01:37.329971"
       }
     },
     {
       "test": "Get All Songs",
       "success": true,
-      "message": "Retrieved 1 songs",
-      "timestamp": "2025-09-17T02:58:15.670941",
+      "message": "Retrieved 4 songs",
+      "timestamp": "2025-09-17T03:01:37.416018",
       "response": {
-        "count": 1
+        "count": 4
       }
     },
     {
       "test": "Get Specific Song",
       "success": true,
       "message": "Retrieved song: Bohemian Rhapsody",
-      "timestamp": "2025-09-17T02:58:15.715000",
+      "timestamp": "2025-09-17T03:01:37.460947",
       "response": {
-        "id": "1df6bd90-762b-40f9-94ff-fcf5fac8b053",
+        "id": "942cdb8d-b7e1-4ffe-bb17-e2e726cfe599",
         "title": "Bohemian Rhapsody",
         "artist": "Queen",
         "album": "A Night at the Opera",
@@ -59,55 +59,57 @@
         "artwork": null,
         "format": "mp3",
         "size": 8542880,
-        "added_date": "2025-09-17T02:58:15.574000"
+        "added_date": "2025-09-17T03:01:37.329000"
       }
     },
     {
       "test": "Get Random Song",
       "success": true,
       "message": "No songs available for random selection (expected)",
-      "timestamp": "2025-09-17T02:58:15.759972"
+      "timestamp": "2025-09-17T03:01:37.504972"
     },
     {
       "test": "Add Favorite",
       "success": true,
-      "message": "Added song to favorites: 5acffa69-638c-4172-813b-88924c61454e",
-      "timestamp": "2025-09-17T02:58:15.814987",
+      "message": "Added song to favorites: 9e59a506-5bf1-463d-9206-36b6a30b2066",
+      "timestamp": "2025-09-17T03:01:37.550969",
       "response": {
-        "id": "5acffa69-638c-4172-813b-88924c61454e",
-        "song_id": "1df6bd90-762b-40f9-94ff-fcf5fac8b053",
-        "added_date": "2025-09-17T02:58:15.763788"
+        "id": "9e59a506-5bf1-463d-9206-36b6a30b2066",
+        "song_id": "942cdb8d-b7e1-4ffe-bb17-e2e726cfe599",
+        "added_date": "2025-09-17T03:01:37.508704"
       }
     },
     {
       "test": "Get Favorites",
       "success": true,
-      "message": "Retrieved 1 favorites",
-      "timestamp": "2025-09-17T02:58:15.858927",
+      "message": "Retrieved 2 favorites",
+      "timestamp": "2025-09-17T03:01:37.594930",
       "response": {
-        "count": 1
+        "count": 2
       }
     },
     {
       "test": "Get Settings",
       "success": true,
       "message": "Retrieved user settings",
-      "timestamp": "2025-09-17T02:58:15.902985",
+      "timestamp": "2025-09-17T03:01:37.638998",
       "response": {
         "id": "37370b5b-3430-42c1-a134-64698c0ed4ee",
-        "selected_folders": [],
+        "selected_folders": [
+          "/music/folder"
+        ],
         "shuffle_mode": true,
         "repeat_mode": "none",
-        "volume": 1.0,
-        "equalizer_preset": "normal",
-        "updated_date": "2025-09-17T02:57:19.424000"
+        "volume": 0.8,
+        "equalizer_preset": "rock",
+        "updated_date": "2025-09-17T02:58:56.645000"
       }
     },
     {
       "test": "Update Settings",
       "success": true,
       "message": "Settings updated successfully",
-      "timestamp": "2025-09-17T02:58:15.949944",
+      "timestamp": "2025-09-17T03:01:37.684984",
       "response": {
         "id": "37370b5b-3430-42c1-a134-64698c0ed4ee",
         "selected_folders": [
@@ -118,29 +120,29 @@
         "repeat_mode": "all",
         "volume": 0.8,
         "equalizer_preset": "rock",
-        "updated_date": "2025-09-17T02:58:15.905000"
+        "updated_date": "2025-09-17T03:01:37.641000"
       }
     },
     {
       "test": "Create Playlist",
       "success": true,
       "message": "Playlist created: My Rock Playlist",
-      "timestamp": "2025-09-17T02:58:16.003959",
+      "timestamp": "2025-09-17T03:01:37.728896",
       "response": {
-        "id": "9d4ce987-9010-437c-a6bd-658bdf78380c",
+        "id": "aac6c866-1b70-4e85-9c15-6ff36b381ab1",
         "name": "My Rock Playlist",
         "song_ids": [
-          "1df6bd90-762b-40f9-94ff-fcf5fac8b053"
+          "942cdb8d-b7e1-4ffe-bb17-e2e726cfe599"
         ],
-        "created_date": "2025-09-17T02:58:15.951541",
-        "updated_date": "2025-09-17T02:58:15.951543"
+        "created_date": "2025-09-17T03:01:37.686570",
+        "updated_date": "2025-09-17T03:01:37.686573"
       }
     },
     {
       "test": "Get Playlists",
       "success": true,
       "message": "Retrieved 1 playlists",
-      "timestamp": "2025-09-17T02:58:16.047930",
+      "timestamp": "2025-09-17T03:01:37.772933",
       "response": {
         "count": 1
       }
@@ -149,22 +151,22 @@
       "test": "Update Playlist",
       "success": true,
       "message": "Playlist updated: Updated Rock Playlist",
-      "timestamp": "2025-09-17T02:58:16.093958",
+      "timestamp": "2025-09-17T03:01:37.818946",
       "response": {
-        "id": "9d4ce987-9010-437c-a6bd-658bdf78380c",
+        "id": "aac6c866-1b70-4e85-9c15-6ff36b381ab1",
         "name": "Updated Rock Playlist",
         "song_ids": [
-          "1df6bd90-762b-40f9-94ff-fcf5fac8b053"
+          "942cdb8d-b7e1-4ffe-bb17-e2e726cfe599"
         ],
-        "created_date": "2025-09-17T02:58:15.951000",
-        "updated_date": "2025-09-17T02:58:16.050000"
+        "created_date": "2025-09-17T03:01:37.686000",
+        "updated_date": "2025-09-17T03:01:37.775000"
       }
     },
     {
       "test": "Add Play History",
       "success": true,
       "message": "Play history added successfully",
-      "timestamp": "2025-09-17T02:58:16.169999",
+      "timestamp": "2025-09-17T03:01:37.862972",
       "response": {
         "message": "Play history added"
       }
@@ -172,30 +174,30 @@
     {
       "test": "Get Play History",
       "success": true,
-      "message": "Retrieved 1 history entries",
-      "timestamp": "2025-09-17T02:58:16.213951",
+      "message": "Retrieved 3 history entries",
+      "timestamp": "2025-09-17T03:01:37.906975",
       "response": {
-        "count": 1
+        "count": 3
       }
     },
     {
       "test": "Remove Favorite",
       "success": true,
       "message": "Favorite removed successfully",
-      "timestamp": "2025-09-17T02:58:16.257921"
+      "timestamp": "2025-09-17T03:01:37.950956"
     },
     {
       "test": "Delete Playlist",
       "success": true,
       "message": "Playlist deleted successfully",
-      "timestamp": "2025-09-17T02:58:16.301961"
+      "timestamp": "2025-09-17T03:01:37.994974"
     },
     {
       "test": "Delete Song",
       "success": true,
       "message": "Song deleted successfully",
-      "timestamp": "2025-09-17T02:58:16.345975"
+      "timestamp": "2025-09-17T03:01:38.038950"
     }
   ],
-  "timestamp": "2025-09-17T02:58:16.346651"
+  "timestamp": "2025-09-17T03:01:38.039152"
 }
