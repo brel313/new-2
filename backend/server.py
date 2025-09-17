@@ -280,6 +280,9 @@ async def get_random_song(folder_paths: Optional[str] = None):
     # Get all songs matching the query
     all_songs = await db.songs.find(query).to_list(1000)
     
+    print(f"DEBUG: Query: {query}")
+    print(f"DEBUG: Found {len(all_songs)} songs")
+    
     if not all_songs:
         raise HTTPException(status_code=404, detail="No songs found")
     
