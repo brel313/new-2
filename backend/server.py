@@ -108,7 +108,7 @@ class PlayHistory(BaseModel):
 # Add your routes to the router instead of directly to app
 @api_router.get("/")
 async def root():
-    return {"message": "Hello World"}
+    return {"message": "Music Player API"}
 
 @api_router.post("/status", response_model=StatusCheck)
 async def create_status_check(input: StatusCheckCreate):
@@ -121,6 +121,168 @@ async def create_status_check(input: StatusCheckCreate):
 async def get_status_checks():
     status_checks = await db.status_checks.find().to_list(1000)
     return [StatusCheck(**status_check) for status_check in status_checks]
+
+# Songs endpoints
+@api_router.post("/songs", response_model=Song)
+async def add_song(song: SongCreate):
+    song_dict = song.dict()
+    song_obj = Song(**song_dict)
+    result = await db.songs.insert_one(song_obj.dict())
+    return song_obj
+
+@api_router.get("/songs", response_model=List[Song])
+async def get_songs(folder_path: Optional[str] = None):
+    query = {}
+    if folder_path:
+        query["folder_path"] = folder_path
+    songs = await db.songs.find(query).to_list(1000)
+    return [Song(**song) for song in songs]
+
+@api_router.get("/songs/{song_id}", response_model=Song)
+async def get_song(song_id: str):
+    song = await db.songs.find_one({"id": song_id})
+    if not song:
+        raise HTTPException(status_code=404, detail="Song not found")
+    return Song(**song)
+
+@api_router.delete("/songs/{song_id}")
+async def delete_song(song_id: str):
+    result = await db.songs.delete_one({"id": song_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Song not found")
+    return {"message": "Song deleted successfully"}
+
+@api_router.delete("/songs")
+async def clear_all_songs():
+    await db.songs.delete_many({})
+    return {"message": "All songs cleared"}
+
+# Favorites endpoints
+@api_router.post("/favorites", response_model=Favorite)
+async def add_favorite(favorite: FavoriteCreate):
+    # Check if song exists
+    song = await db.songs.find_one({"id": favorite.song_id})
+    if not song:
+        raise HTTPException(status_code=404, detail="Song not found")
+    
+    # Check if already favorited
+    existing = await db.favorites.find_one({"song_id": favorite.song_id})
+    if existing:
+        return Favorite(**existing)
+    
+    favorite_dict = favorite.dict()
+    favorite_obj = Favorite(**favorite_dict)
+    await db.favorites.insert_one(favorite_obj.dict())
+    return favorite_obj
+
+@api_router.get("/favorites", response_model=List[Favorite])
+async def get_favorites():
+    favorites = await db.favorites.find().to_list(1000)
+    return [Favorite(**favorite) for favorite in favorites]
+
+@api_router.delete("/favorites/{song_id}")
+async def remove_favorite(song_id: str):
+    result = await db.favorites.delete_one({"song_id": song_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Favorite not found")
+    return {"message": "Favorite removed successfully"}
+
+# Playlists endpoints
+@api_router.post("/playlists", response_model=Playlist)
+async def create_playlist(playlist: PlaylistCreate):
+    playlist_dict = playlist.dict()
+    playlist_obj = Playlist(**playlist_dict)
+    await db.playlists.insert_one(playlist_obj.dict())
+    return playlist_obj
+
+@api_router.get("/playlists", response_model=List[Playlist])
+async def get_playlists():
+    playlists = await db.playlists.find().to_list(1000)
+    return [Playlist(**playlist) for playlist in playlists]
+
+@api_router.get("/playlists/{playlist_id}", response_model=Playlist)
+async def get_playlist(playlist_id: str):
+    playlist = await db.playlists.find_one({"id": playlist_id})
+    if not playlist:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    return Playlist(**playlist)
+
+@api_router.put("/playlists/{playlist_id}", response_model=Playlist)
+async def update_playlist(playlist_id: str, playlist_update: PlaylistUpdate):
+    existing = await db.playlists.find_one({"id": playlist_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    
+    update_dict = {k: v for k, v in playlist_update.dict().items() if v is not None}
+    update_dict["updated_date"] = datetime.utcnow()
+    
+    await db.playlists.update_one({"id": playlist_id}, {"$set": update_dict})
+    updated_playlist = await db.playlists.find_one({"id": playlist_id})
+    return Playlist(**updated_playlist)
+
+@api_router.delete("/playlists/{playlist_id}")
+async def delete_playlist(playlist_id: str):
+    result = await db.playlists.delete_one({"id": playlist_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    return {"message": "Playlist deleted successfully"}
+
+# User settings endpoints
+@api_router.get("/settings", response_model=UserSettings)
+async def get_settings():
+    settings = await db.settings.find_one({})
+    if not settings:
+        # Create default settings
+        default_settings = UserSettings()
+        await db.settings.insert_one(default_settings.dict())
+        return default_settings
+    return UserSettings(**settings)
+
+@api_router.put("/settings", response_model=UserSettings)
+async def update_settings(settings_update: UserSettingsUpdate):
+    existing = await db.settings.find_one({})
+    if not existing:
+        # Create new settings
+        update_dict = {k: v for k, v in settings_update.dict().items() if v is not None}
+        new_settings = UserSettings(**update_dict)
+        await db.settings.insert_one(new_settings.dict())
+        return new_settings
+    
+    update_dict = {k: v for k, v in settings_update.dict().items() if v is not None}
+    update_dict["updated_date"] = datetime.utcnow()
+    
+    await db.settings.update_one({"id": existing["id"]}, {"$set": update_dict})
+    updated_settings = await db.settings.find_one({"id": existing["id"]})
+    return UserSettings(**updated_settings)
+
+# Play history endpoints
+@api_router.post("/history")
+async def add_play_history(song_id: str, play_duration: int = 0):
+    history = PlayHistory(song_id=song_id, play_duration=play_duration)
+    await db.play_history.insert_one(history.dict())
+    return {"message": "Play history added"}
+
+@api_router.get("/history")
+async def get_play_history(limit: int = 50):
+    history = await db.play_history.find().sort("played_date", -1).limit(limit).to_list(limit)
+    return history
+
+# Random song endpoint
+@api_router.get("/songs/random", response_model=Song)
+async def get_random_song(folder_paths: Optional[str] = None):
+    query = {}
+    if folder_paths:
+        folder_list = folder_paths.split(",")
+        query["folder_path"] = {"$in": folder_list}
+    
+    # Get random song using aggregation
+    pipeline = [{"$match": query}, {"$sample": {"size": 1}}]
+    songs = await db.songs.aggregate(pipeline).to_list(1)
+    
+    if not songs:
+        raise HTTPException(status_code=404, detail="No songs found")
+    
+    return Song(**songs[0])
 
 # Include the router in the main app
 app.include_router(api_router)
