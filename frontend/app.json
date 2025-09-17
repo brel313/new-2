@@ -14,9 +14,15 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000"
+        "backgroundColor": "#FF6B35"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "READ_EXTERNAL_STORAGE",
+        "READ_MEDIA_AUDIO",
+        "MANAGE_EXTERNAL_STORAGE"
+      ],
+      "package": "com.musicplayer.offline"
     },
     "web": {
       "bundler": "metro",
