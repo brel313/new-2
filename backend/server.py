@@ -138,6 +138,29 @@ async def get_songs(folder_path: Optional[str] = None):
     songs = await db.songs.find(query).to_list(1000)
     return [Song(**song) for song in songs]
 
+# Random song endpoint - MUST be before /songs/{song_id}
+@api_router.get("/songs/random", response_model=Song)
+async def get_random_song(folder_paths: Optional[str] = None):
+    import random
+    
+    query = {}
+    if folder_paths:
+        folder_list = folder_paths.split(",")
+        query["folder_path"] = {"$in": folder_list}
+    
+    # Get all songs matching the query
+    all_songs = await db.songs.find(query).to_list(1000)
+    
+    print(f"DEBUG: Query: {query}")
+    print(f"DEBUG: Found {len(all_songs)} songs")
+    
+    if not all_songs:
+        raise HTTPException(status_code=404, detail="No songs found")
+    
+    # Pick a random song
+    random_song = random.choice(all_songs)
+    return Song(**random_song)
+
 @api_router.get("/songs/{song_id}", response_model=Song)
 async def get_song(song_id: str):
     song = await db.songs.find_one({"id": song_id})
