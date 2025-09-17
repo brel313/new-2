@@ -18,8 +18,6 @@ import {
   Switch,
   TextInput,
   Animated,
-  PanGestureHandler,
-  State,
   BackHandler,
 } from 'react-native';
 import { Audio, AVPlaybackStatus } from 'expo-av';
