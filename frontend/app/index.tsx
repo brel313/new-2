@@ -46,6 +46,9 @@ interface Song {
   artwork?: string;
   format: string;
   size: number;
+  lyrics?: string;
+  genre?: string;
+  year?: number;
 }
 
 interface UserSettings {
@@ -54,6 +57,8 @@ interface UserSettings {
   repeat_mode: string;
   volume: number;
   equalizer_preset: string;
+  theme_mode: 'light' | 'dark' | 'auto';
+  sleep_timer: number;
 }
 
 interface FolderInfo {
@@ -61,6 +66,17 @@ interface FolderInfo {
   name: string;
   songCount: number;
   selected: boolean;
+}
+
+interface PlayHistoryItem {
+  id: string;
+  song: Song;
+  played_at: Date;
+}
+
+interface AudioVisualizerData {
+  frequency: number[];
+  amplitude: number;
 }
 
 export default function MusicPlayer() {
