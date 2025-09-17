@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, HTTPException
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -6,9 +6,10 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional
 import uuid
 from datetime import datetime
+from bson import ObjectId
 
 
 ROOT_DIR = Path(__file__).parent
@@ -34,6 +35,75 @@ class StatusCheck(BaseModel):
 
 class StatusCheckCreate(BaseModel):
     client_name: str
+
+class Song(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    title: str
+    artist: str = ""
+    album: str = ""
+    duration: int = 0  # in seconds
+    file_path: str
+    folder_path: str
+    artwork: Optional[str] = None  # base64 encoded image
+    format: str = ""
+    size: int = 0
+    added_date: datetime = Field(default_factory=datetime.utcnow)
+
+class SongCreate(BaseModel):
+    title: str
+    artist: str = ""
+    album: str = ""
+    duration: int = 0
+    file_path: str
+    folder_path: str
+    artwork: Optional[str] = None
+    format: str = ""
+    size: int = 0
+
+class Favorite(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    song_id: str
+    added_date: datetime = Field(default_factory=datetime.utcnow)
+
+class FavoriteCreate(BaseModel):
+    song_id: str
+
+class Playlist(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    song_ids: List[str] = []
+    created_date: datetime = Field(default_factory=datetime.utcnow)
+    updated_date: datetime = Field(default_factory=datetime.utcnow)
+
+class PlaylistCreate(BaseModel):
+    name: str
+    song_ids: List[str] = []
+
+class PlaylistUpdate(BaseModel):
+    name: Optional[str] = None
+    song_ids: Optional[List[str]] = None
+
+class UserSettings(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    selected_folders: List[str] = []
+    shuffle_mode: bool = True
+    repeat_mode: str = "none"  # none, one, all
+    volume: float = 1.0
+    equalizer_preset: str = "normal"
+    updated_date: datetime = Field(default_factory=datetime.utcnow)
+
+class UserSettingsUpdate(BaseModel):
+    selected_folders: Optional[List[str]] = None
+    shuffle_mode: Optional[bool] = None
+    repeat_mode: Optional[str] = None
+    volume: Optional[float] = None
+    equalizer_preset: Optional[str] = None
+
+class PlayHistory(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    song_id: str
+    played_date: datetime = Field(default_factory=datetime.utcnow)
+    play_duration: int = 0  # seconds actually played
 
 # Add your routes to the router instead of directly to app
 @api_router.get("/")
