@@ -14,12 +14,14 @@ import {
   ActivityIndicator,
   Modal,
   ScrollView,
+  PermissionsAndroid,
 } from 'react-native';
-import { Audio } from 'expo-av';
+import { Audio, AVPlaybackStatus } from 'expo-av';
 import * as MediaLibrary from 'expo-media-library';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Slider from '@react-native-community/slider';
+import * as DocumentPicker from 'expo-document-picker';
 
 const { width, height } = Dimensions.get('window');
 const EXPO_PUBLIC_BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
