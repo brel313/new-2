@@ -11,7 +11,7 @@ from datetime import datetime
 import uuid
 
 # Get backend URL from frontend .env
-BACKEND_URL = "https://pova-music-player.preview.emergentagent.com/api"
+BACKEND_URL = "https://prezento-1.preview.emergentagent.com/api"
 
 class MusicPlayerAPITester:
     def __init__(self):
