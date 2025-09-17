@@ -290,29 +290,6 @@ async def get_play_history(limit: int = 50):
     history = await db.play_history.find().sort("played_date", -1).limit(limit).to_list(limit)
     return [PlayHistory(**item) for item in history]
 
-# Random song endpoint
-@api_router.get("/songs/random", response_model=Song)
-async def get_random_song(folder_paths: Optional[str] = None):
-    import random
-    
-    query = {}
-    if folder_paths:
-        folder_list = folder_paths.split(",")
-        query["folder_path"] = {"$in": folder_list}
-    
-    # Get all songs matching the query
-    all_songs = await db.songs.find(query).to_list(1000)
-    
-    print(f"DEBUG: Query: {query}")
-    print(f"DEBUG: Found {len(all_songs)} songs")
-    
-    if not all_songs:
-        raise HTTPException(status_code=404, detail="No songs found")
-    
-    # Pick a random song
-    random_song = random.choice(all_songs)
-    return Song(**random_song)
-
 # Include the router in the main app
 app.include_router(api_router)
 
