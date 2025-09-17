@@ -16,6 +16,7 @@ import {
   ScrollView,
   PermissionsAndroid,
   Switch,
+  TextInput,
 } from 'react-native';
 import { Audio, AVPlaybackStatus } from 'expo-av';
 import * as MediaLibrary from 'expo-media-library';
@@ -49,6 +50,13 @@ interface UserSettings {
   equalizer_preset: string;
 }
 
+interface FolderInfo {
+  path: string;
+  name: string;
+  songCount: number;
+  selected: boolean;
+}
+
 export default function MusicPlayer() {
   const [songs, setSongs] = useState<Song[]>([]);
   const [currentSong, setCurrentSong] = useState<Song | null>(null);
@@ -62,10 +70,13 @@ export default function MusicPlayer() {
   const [repeatMode, setRepeatMode] = useState<'none' | 'one' | 'all'>('none');
   const [showPlaylist, setShowPlaylist] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showFolderSelection, setShowFolderSelection] = useState(false);
   const [permissionStatus, setPermissionStatus] = useState<string>('unknown');
-  const [availableFolders, setAvailableFolders] = useState<string[]>([]);
+  const [availableFolders, setAvailableFolders] = useState<FolderInfo[]>([]);
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState('');
 
   const soundRef = useRef<Audio.Sound | null>(null);
   const positionUpdateRef = useRef<NodeJS.Timeout | null>(null);
@@ -126,73 +137,120 @@ export default function MusicPlayer() {
 
   const scanForMusic = async () => {
     try {
+      setIsScanning(true);
       setIsLoading(true);
+      setScanProgress('Iniciando escaneo...');
       console.log('Scanning for music...');
 
-      const media = await MediaLibrary.getAssetsAsync({
-        mediaType: 'audio',
-        first: 1000,
-        sortBy: 'creationTime',
-      });
+      // First, get all audio assets
+      let allAssets: MediaLibrary.Asset[] = [];
+      let hasNextPage = true;
+      let endCursor: string | undefined;
 
-      console.log(`Found ${media.assets.length} audio files`);
+      while (hasNextPage) {
+        const media = await MediaLibrary.getAssetsAsync({
+          mediaType: 'audio',
+          first: 100,
+          after: endCursor,
+          sortBy: 'creationTime',
+        });
 
-      const folders = new Set<string>();
+        allAssets.push(...media.assets);
+        hasNextPage = media.hasNextPage;
+        endCursor = media.endCursor;
+        
+        setScanProgress(`Encontrados ${allAssets.length} archivos de audio...`);
+      }
+
+      console.log(`Found ${allAssets.length} audio files`);
+
+      const folderMap = new Map<string, { songs: Song[], count: number }>();
       const musicFiles: Song[] = [];
 
-      for (const asset of media.assets) {
-        const assetInfo = await MediaLibrary.getAssetInfoAsync(asset);
-        const folderPath = assetInfo.localUri?.split('/').slice(0, -1).join('/') || '';
-        folders.add(folderPath);
-
-        const song: Song = {
-          id: asset.id,
-          title: asset.filename.replace(/\.[^/.]+$/, ''),
-          artist: 'Artista Desconocido',
-          album: 'Álbum Desconocido',
-          duration: Math.floor(asset.duration),
-          file_path: assetInfo.localUri || asset.uri,
-          folder_path: folderPath,
-          format: asset.filename.split('.').pop() || '',
-          size: 0,
-        };
-
-        musicFiles.push(song);
+      for (let i = 0; i < allAssets.length; i++) {
+        const asset = allAssets[i];
+        setScanProgress(`Procesando ${i + 1}/${allAssets.length} archivos...`);
         
-        // Save to backend
         try {
-          await fetch(`${EXPO_PUBLIC_BACKEND_URL}/api/songs`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              title: song.title,
-              artist: song.artist,
-              album: song.album,
-              duration: song.duration,
-              file_path: song.file_path,
-              folder_path: song.folder_path,
-              format: song.format,
-              size: song.size,
-            }),
-          });
+          const assetInfo = await MediaLibrary.getAssetInfoAsync(asset);
+          const folderPath = assetInfo.localUri?.split('/').slice(0, -1).join('/') || '';
+          const folderName = folderPath.split('/').pop() || 'Root';
+
+          const song: Song = {
+            id: asset.id,
+            title: asset.filename.replace(/\.[^/.]+$/, ''),
+            artist: 'Artista Desconocido',
+            album: 'Álbum Desconocido',
+            duration: Math.floor(asset.duration),
+            file_path: assetInfo.localUri || asset.uri,
+            folder_path: folderPath,
+            format: asset.filename.split('.').pop() || '',
+            size: 0,
+          };
+
+          musicFiles.push(song);
+
+          // Group by folder
+          if (!folderMap.has(folderPath)) {
+            folderMap.set(folderPath, { songs: [], count: 0 });
+          }
+          folderMap.get(folderPath)!.songs.push(song);
+          folderMap.get(folderPath)!.count++;
+
+          // Save to backend
+          try {
+            await fetch(`${EXPO_PUBLIC_BACKEND_URL}/api/songs`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                title: song.title,
+                artist: song.artist,
+                album: song.album,
+                duration: song.duration,
+                file_path: song.file_path,
+                folder_path: song.folder_path,
+                format: song.format,
+                size: song.size,
+              }),
+            });
+          } catch (error) {
+            console.log('Error saving song to database:', error);
+          }
         } catch (error) {
-          console.log('Error saving song to database:', error);
+          console.log('Error processing asset:', error);
         }
       }
 
+      // Create folder info array
+      const folders: FolderInfo[] = Array.from(folderMap.entries()).map(([path, data]) => ({
+        path,
+        name: path.split('/').pop() || 'Root',
+        songCount: data.count,
+        selected: true, // Select all folders by default
+      }));
+
       setSongs(musicFiles);
-      setAvailableFolders(Array.from(folders));
-      setSelectedFolders(Array.from(folders)); // Select all folders by default
+      setAvailableFolders(folders);
+      setSelectedFolders(folders.map(f => f.path));
+
+      setScanProgress(`Escaneo completado: ${musicFiles.length} canciones en ${folders.length} carpetas`);
 
       if (musicFiles.length > 0) {
         await playRandomSong(musicFiles);
+      } else {
+        Alert.alert('No se encontró música', 'No se encontraron archivos de música en tu dispositivo.');
       }
 
-      setIsLoading(false);
+      setTimeout(() => {
+        setIsScanning(false);
+        setIsLoading(false);
+      }, 2000);
+
     } catch (error) {
       console.error('Error scanning for music:', error);
+      setIsScanning(false);
       setIsLoading(false);
       Alert.alert('Error', 'Failed to scan for music files');
     }
@@ -370,6 +428,35 @@ export default function MusicPlayer() {
     }
   };
 
+  const toggleFolderSelection = (folderPath: string) => {
+    const updatedFolders = availableFolders.map(folder =>
+      folder.path === folderPath ? { ...folder, selected: !folder.selected } : folder
+    );
+    setAvailableFolders(updatedFolders);
+    
+    const newSelectedFolders = updatedFolders
+      .filter(folder => folder.selected)
+      .map(folder => folder.path);
+    
+    setSelectedFolders(newSelectedFolders);
+    saveSettings({ selected_folders: newSelectedFolders });
+  };
+
+  const selectAllFolders = () => {
+    const updatedFolders = availableFolders.map(folder => ({ ...folder, selected: true }));
+    setAvailableFolders(updatedFolders);
+    const allFolderPaths = updatedFolders.map(folder => folder.path);
+    setSelectedFolders(allFolderPaths);
+    saveSettings({ selected_folders: allFolderPaths });
+  };
+
+  const deselectAllFolders = () => {
+    const updatedFolders = availableFolders.map(folder => ({ ...folder, selected: false }));
+    setAvailableFolders(updatedFolders);
+    setSelectedFolders([]);
+    saveSettings({ selected_folders: [] });
+  };
+
   const loadSettings = async () => {
     try {
       const response = await fetch(`${EXPO_PUBLIC_BACKEND_URL}/api/settings`);
@@ -464,6 +551,22 @@ export default function MusicPlayer() {
     </TouchableOpacity>
   );
 
+  const renderFolderItem = ({ item }: { item: FolderInfo }) => (
+    <View style={styles.folderItem}>
+      <View style={styles.folderInfo}>
+        <Text style={styles.folderName}>{item.name}</Text>
+        <Text style={styles.folderPath}>{item.path}</Text>
+        <Text style={styles.folderCount}>{item.songCount} canciones</Text>
+      </View>
+      <Switch
+        value={item.selected}
+        onValueChange={() => toggleFolderSelection(item.path)}
+        trackColor={{ false: '#666', true: '#FF6B35' }}
+        thumbColor={item.selected ? '#FFF' : '#CCC'}
+      />
+    </View>
+  );
+
   if (permissionStatus !== 'granted') {
     return (
       <SafeAreaView style={styles.container}>
@@ -500,7 +603,7 @@ export default function MusicPlayer() {
       {/* Main Player */}
       <View style={styles.playerContainer}>
         {currentSong ? (
-          <>
+          <React.Fragment>
             {/* Album Art */}
             <View style={styles.albumArtContainer}>
               {currentSong.artwork ? (
@@ -598,7 +701,7 @@ export default function MusicPlayer() {
               />
               <Ionicons name="volume-high" size={20} color="#666" />
             </View>
-          </>
+          </React.Fragment>
         ) : (
           <View style={styles.noMusicContainer}>
             <Ionicons name="musical-notes-outline" size={100} color="#666" />
@@ -613,10 +716,12 @@ export default function MusicPlayer() {
       </View>
 
       {/* Loading Overlay */}
-      {isLoading && songs.length === 0 && (
+      {(isLoading || isScanning) && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color="#FF6B35" />
-          <Text style={styles.loadingText}>Escaneando música...</Text>
+          <Text style={styles.loadingText}>
+            {isScanning ? scanProgress : 'Cargando...'}
+          </Text>
         </View>
       )}
 
@@ -628,7 +733,9 @@ export default function MusicPlayer() {
       >
         <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Lista de Canciones</Text>
+            <Text style={styles.modalTitle}>
+              Lista de Canciones ({getFilteredSongs().length})
+            </Text>
             <TouchableOpacity onPress={() => setShowPlaylist(false)}>
               <Ionicons name="close" size={24} color="#FFF" />
             </TouchableOpacity>
@@ -638,6 +745,62 @@ export default function MusicPlayer() {
             keyExtractor={(item) => item.id}
             renderItem={renderSongItem}
             style={styles.songList}
+            ListEmptyComponent={
+              <View style={styles.emptyList}>
+                <Ionicons name="musical-notes-outline" size={60} color="#666" />
+                <Text style={styles.emptyListText}>No hay canciones en las carpetas seleccionadas</Text>
+                <TouchableOpacity 
+                  style={styles.emptyListButton} 
+                  onPress={() => setShowFolderSelection(true)}
+                >
+                  <Text style={styles.emptyListButtonText}>Seleccionar Carpetas</Text>
+                </TouchableOpacity>
+              </View>
+            }
+          />
+        </SafeAreaView>
+      </Modal>
+
+      {/* Folder Selection Modal */}
+      <Modal
+        visible={showFolderSelection}
+        animationType="slide"
+        presentationStyle="formSheet"
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Seleccionar Carpetas</Text>
+            <TouchableOpacity onPress={() => setShowFolderSelection(false)}>
+              <Ionicons name="close" size={24} color="#FFF" />
+            </TouchableOpacity>
+          </View>
+          
+          <View style={styles.folderActions}>
+            <TouchableOpacity style={styles.folderActionButton} onPress={selectAllFolders}>
+              <Text style={styles.folderActionText}>Seleccionar Todas</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.folderActionButton} onPress={deselectAllFolders}>
+              <Text style={styles.folderActionText}>Deseleccionar Todas</Text>
+            </TouchableOpacity>
+          </View>
+
+          <FlatList
+            data={availableFolders}
+            keyExtractor={(item) => item.path}
+            renderItem={renderFolderItem}
+            style={styles.folderList}
+            ListEmptyComponent={
+              <View style={styles.emptyList}>
+                <Ionicons name="folder-outline" size={60} color="#666" />
+                <Text style={styles.emptyListText}>No se encontraron carpetas</Text>
+                <TouchableOpacity 
+                  style={styles.emptyListButton} 
+                  onPress={scanForMusic}
+                >
+                  <Text style={styles.emptyListButtonText}>Escanear Música</Text>
+                </TouchableOpacity>
+              </View>
+            }
           />
         </SafeAreaView>
       </Modal>
@@ -656,10 +819,19 @@ export default function MusicPlayer() {
             </TouchableOpacity>
           </View>
           <ScrollView style={styles.settingsContainer}>
-            <Text style={styles.settingsSection}>Carpetas de Música</Text>
+            <Text style={styles.settingsSection}>Música</Text>
+            
             <TouchableOpacity style={styles.settingsButton} onPress={scanForMusic}>
               <Ionicons name="refresh" size={20} color="#FF6B35" />
               <Text style={styles.settingsButtonText}>Escanear Nueva Música</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.settingsButton} 
+              onPress={() => setShowFolderSelection(true)}
+            >
+              <Ionicons name="folder" size={20} color="#FF6B35" />
+              <Text style={styles.settingsButtonText}>Seleccionar Carpetas</Text>
             </TouchableOpacity>
             
             <Text style={styles.statsText}>
@@ -667,6 +839,12 @@ export default function MusicPlayer() {
             </Text>
             <Text style={styles.statsText}>
               {availableFolders.length} carpetas disponibles
+            </Text>
+            <Text style={styles.statsText}>
+              {selectedFolders.length} carpetas seleccionadas
+            </Text>
+            <Text style={styles.statsText}>
+              {getFilteredSongs().length} canciones en carpetas seleccionadas
             </Text>
           </ScrollView>
         </SafeAreaView>
@@ -852,7 +1030,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(26, 26, 26, 0.8)',
+    backgroundColor: 'rgba(26, 26, 26, 0.9)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -860,6 +1038,7 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 16,
     marginTop: 10,
+    textAlign: 'center',
   },
   modalContainer: {
     flex: 1,
@@ -913,6 +1092,77 @@ const styles = StyleSheet.create({
   },
   favoriteButton: {
     padding: 10,
+  },
+  folderList: {
+    flex: 1,
+  },
+  folderItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  folderInfo: {
+    flex: 1,
+  },
+  folderName: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 5,
+  },
+  folderPath: {
+    color: '#CCC',
+    fontSize: 12,
+    marginBottom: 2,
+  },
+  folderCount: {
+    color: '#666',
+    fontSize: 12,
+  },
+  folderActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  folderActionButton: {
+    backgroundColor: '#FF6B35',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  folderActionText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  emptyList: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+  },
+  emptyListText: {
+    color: '#666',
+    fontSize: 16,
+    textAlign: 'center',
+    marginTop: 20,
+    marginBottom: 20,
+  },
+  emptyListButton: {
+    backgroundColor: '#FF6B35',
+    paddingHorizontal: 30,
+    paddingVertical: 15,
+    borderRadius: 25,
+  },
+  emptyListButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   settingsContainer: {
     flex: 1,
