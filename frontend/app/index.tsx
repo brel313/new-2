@@ -404,12 +404,20 @@ export default function MusicPlayer() {
     try {
       if (!soundRef.current) return;
 
+      // Add haptic feedback
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      animatePlayButton();
+
       if (isPlaying) {
         await soundRef.current.pauseAsync();
         setIsPlaying(false);
+        stopAlbumRotation();
+        stopVisualizer();
       } else {
         await soundRef.current.playAsync();
         setIsPlaying(true);
+        startAlbumRotation();
+        startVisualizer();
       }
     } catch (error) {
       console.error('Error toggling play/pause:', error);
